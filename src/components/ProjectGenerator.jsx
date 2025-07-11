@@ -223,6 +223,17 @@ const ProjectGenerator = () => {
     return content.replace(/team\s*=\s*\d+/g, `team = ${teamNumber}`);
   };
 
+  const processWPILibPreferences = (content, teamNumber) => {
+    try {
+      const preferences = JSON.parse(content);
+      preferences.teamNumber = parseInt(teamNumber);
+      return JSON.stringify(preferences, null, 2);
+    } catch (error) {
+      console.warn('Could not parse WPILib preferences, creating new one:', error);
+      return createWPILibPreferences(teamNumber);
+    }
+  };
+
   const createWPILibPreferences = (teamNumber) => {
     return JSON.stringify({
       "enableCppIntellisense": false,
@@ -280,6 +291,8 @@ const ProjectGenerator = () => {
           content = processJavaFile(content, formData.teamNumber, formData.teamName, formData.projectName);
         } else if (fileName.includes('build.gradle')) {
           content = processGradleFile(content, formData.teamNumber);
+        } else if (fileName.includes('wpilib_preferences.json')) {
+          content = processWPILibPreferences(content, formData.teamNumber);
         }
         
         // Create the file in the appropriate location
@@ -295,10 +308,6 @@ const ProjectGenerator = () => {
         const finalFileName = pathParts[pathParts.length - 1];
         currentFolder.file(finalFileName, content);
       }
-      
-      // Add WPILib preferences
-      const wpiLibFolder = projectFolder.folder('.wpilib');
-      wpiLibFolder.file('wpilib_preferences.json', createWPILibPreferences(formData.teamNumber));
       
       // Add README
       const readme = `# ${formData.projectName}
