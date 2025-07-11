@@ -155,11 +155,10 @@ const ProjectGenerator = () => {
   const fetchKnownFiles = async () => {
     const knownFiles = [
       // Root level files
-      'build.gradle',
-      'settings.gradle', 
-      'README.md',
-      'WPILib-License.md',
       '.gitignore',
+      'WPILib-License.md',
+      'build.gradle',
+      'settings.gradle',
       'gradlew',
       'gradlew.bat',
       'tuner-project.json',
@@ -168,31 +167,27 @@ const ProjectGenerator = () => {
       'gradle/wrapper/gradle-wrapper.jar',
       'gradle/wrapper/gradle-wrapper.properties',
       
+      // WPILib preferences
+      '.wpilib/wpilib_preferences.json',
+      
       // Source files - main robot code
       'src/main/java/frc/robot/Main.java',
       'src/main/java/frc/robot/Robot.java',
       'src/main/java/frc/robot/RobotContainer.java',
       'src/main/java/frc/robot/Telemetry.java',
       
-      // Generated constants (this path might vary)
+      // Generated constants
       'src/main/java/frc/robot/generated/TunerConstants.java',
       
       // Subsystems
       'src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java',
       
-      // Commands (if any exist)
-      'src/main/java/frc/robot/commands/TeleopSwerve.java',
-      
       // Deploy directory
       'src/main/deploy/example.txt',
       
-      // Vendor dependencies
-      'vendordeps/Phoenix6.json',
-      'vendordeps/navx_frc.json',
-      'vendordeps/REVLib.json',
-      
-      // WPILib folder
-      '.wpilib/wpilib_preferences.json'
+      // Vendor dependencies (actual names from repository)
+      'vendordeps/Phoenix6-frc2025-latest.json',
+      'vendordeps/WPILibNewCommands.json'
     ];
     
     const files = [];
