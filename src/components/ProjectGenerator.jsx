@@ -1,105 +1,95 @@
 import { useState } from 'react';
 import JSZip from 'jszip';
+import StepIndicator from './StepIndicator';
+import ProjectInfoStep from './ProjectInfoStep';
+import DrivetrainStep from './DrivetrainStep';
+import FeaturesStep from './FeaturesStep';
+import ReviewStep from './ReviewStep';
 
 const ProjectGenerator = () => {
+  const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState({
+    // Project Info
     teamNumber: '',
     teamName: '',
-    projectName: ''
+    projectName: '',
+    
+    // Drivetrain Config
+    drivetrainType: 'swerve',
+    wheelDiameter: '4',
+    driveGearRatio: '6.14',
+    steerGearRatio: '15.43',
+    useCANivore: false,
+    canivoreSerial: '',
+    
+    // Features
+    includePathPlanner: false,
+    includeVision: false
   });
   
   const [status, setStatus] = useState({ type: '', message: '' });
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedZip, setGeneratedZip] = useState(null);
 
-  const handleInputChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+  const stepNames = ['Project Info', 'Drivetrain', 'Features', 'Generate'];
+  const totalSteps = 4;
+
+  const handleNext = () => {
+    if (currentStep < totalSteps) {
+      setCurrentStep(currentStep + 1);
+    }
   };
 
-  const validateForm = () => {
-    if (!formData.teamNumber.trim()) {
-      setStatus({ type: 'error', message: 'Team number is required' });
-      return false;
+  const handlePrevious = () => {
+    if (currentStep > 1) {
+      setCurrentStep(currentStep - 1);
     }
-    
-    if (!/^\d{1,5}$/.test(formData.teamNumber.trim())) {
-      setStatus({ type: 'error', message: 'Team number must be 1-5 digits' });
-      return false;
-    }
-    
-    if (!formData.teamName.trim()) {
-      setStatus({ type: 'error', message: 'Team name is required' });
-      return false;
-    }
-    
-    if (!formData.projectName.trim()) {
-      setStatus({ type: 'error', message: 'Project name is required' });
-      return false;
-    }
-    
-    return true;
   };
 
-  const fetchFileFromGitHub = async (path) => {
-    const baseUrl = 'https://api.github.com/repos/Hemlock5712/2025-Workshop/contents';
-    const url = `${baseUrl}/${path}`;
+  const handleFormDataChange = (newData) => {
+    setFormData(newData);
+  };
+
+  // Fetch files from GitHub with branch support
+  const fetchFileFromGitHub = async (path, branch = 'main') => {
+    const baseUrl = `https://api.github.com/repos/Hemlock5712/2025-Workshop/contents`;
+    const url = `${baseUrl}/${path}?ref=${branch}`;
     
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Failed to fetch ${path}: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch ${path} from ${branch}: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
       
       // Handle single file
       if (data.type === 'file') {
-        const content = atob(data.content);
-        return { path, content, type: 'file' };
-      } 
-      // Handle directory - data will be an array
-      else if (Array.isArray(data)) {
-        const files = [];
-        for (const item of data) {
-          if (item.type === 'file') {
-            const fileContent = await fetchFileFromGitHub(item.path);
-            files.push(fileContent);
-          } else if (item.type === 'dir') {
-            const dirContents = await fetchFileFromGitHub(item.path);
-            if (Array.isArray(dirContents)) {
-              files.push(...dirContents);
-            } else {
-              files.push(dirContents);
-            }
-          }
-        }
-        return files;
-      }
-      // Handle single directory object (shouldn't happen with GitHub API, but just in case)
-      else if (data.type === 'dir') {
-        // Re-fetch as the API should return array for directories
-        return await fetchFileFromGitHub(path);
+        const content = data.content ? atob(data.content) : '';
+        return { 
+          path: data.path, 
+          content, 
+          type: 'file',
+          name: data.name 
+        };
       }
       
       throw new Error(`Unexpected data type for ${path}`);
     } catch (error) {
-      console.error(`Error fetching ${path}:`, error);
+      console.error(`Error fetching ${path} from ${branch}:`, error);
       throw error;
     }
   };
 
-  // Method to fetch the entire repository structure recursively
-  const fetchRepositoryStructure = async (path = '') => {
-    const baseUrl = 'https://api.github.com/repos/Hemlock5712/2025-Workshop/contents';
-    const url = path ? `${baseUrl}/${path}` : baseUrl;
+  // Method to fetch the entire repository structure recursively from a specific branch
+  const fetchRepositoryStructure = async (path = '', branch = 'main') => {
+    const baseUrl = `https://api.github.com/repos/Hemlock5712/2025-Workshop/contents`;
+    const url = path ? `${baseUrl}/${path}?ref=${branch}` : `${baseUrl}?ref=${branch}`;
     
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Failed to fetch ${path || 'root'}: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch ${path || 'root'} from ${branch}: ${response.status} ${response.statusText}`);
       }
       
       const data = await response.json();
@@ -138,7 +128,7 @@ const ProjectGenerator = () => {
               name: item.name 
             });
           } else if (item.type === 'dir') {
-            const subFiles = await fetchRepositoryStructure(item.path);
+            const subFiles = await fetchRepositoryStructure(item.path, branch);
             files.push(...subFiles);
           }
         }
@@ -146,61 +136,81 @@ const ProjectGenerator = () => {
       
       return files;
     } catch (error) {
-      console.error(`Error fetching ${path || 'root'}:`, error);
+      console.error(`Error fetching ${path || 'root'} from ${branch}:`, error);
       throw error;
     }
   };
 
-  // Fallback method to fetch specific known files if full repo fetch fails
-  const fetchKnownFiles = async () => {
-    const knownFiles = [
-      // Root level files
-      '.gitignore',
-      'WPILib-License.md',
-      'build.gradle',
-      'settings.gradle',
-      'gradlew',
-      'gradlew.bat',
-      'tuner-project.json',
-      
-      // Gradle wrapper
-      'gradle/wrapper/gradle-wrapper.jar',
-      'gradle/wrapper/gradle-wrapper.properties',
-      
-      // WPILib preferences
-      '.wpilib/wpilib_preferences.json',
-      
-      // Source files - main robot code
-      'src/main/java/frc/robot/Main.java',
-      'src/main/java/frc/robot/Robot.java',
-      'src/main/java/frc/robot/RobotContainer.java',
-      'src/main/java/frc/robot/Telemetry.java',
-      
-      // Generated constants
-      'src/main/java/frc/robot/generated/TunerConstants.java',
-      
-      // Subsystems
-      'src/main/java/frc/robot/subsystems/CommandSwerveDrivetrain.java',
-      
-      // Deploy directory
-      'src/main/deploy/example.txt',
-      
-      // Vendor dependencies (actual names from repository)
-      'vendordeps/Phoenix6-frc2025-latest.json',
-      'vendordeps/WPILibNewCommands.json'
-    ];
+  // Merge files from multiple branches
+  const mergeRepositoryFiles = async () => {
+    console.log('Starting to merge repository files...');
     
-    const files = [];
-    for (const filePath of knownFiles) {
+    let baseFiles;
+    try {
+      console.log('Fetching base files from main branch...');
+      baseFiles = await fetchRepositoryStructure('', 'main');
+      console.log(`Fetched ${baseFiles.length} base files from main branch`);
+    } catch (error) {
+      console.error('Failed to fetch base files from main branch:', error);
+      throw new Error(`Failed to fetch base files: ${error.message}`);
+    }
+    
+    let allFiles = [...baseFiles];
+    
+    // Add PathPlanner files if selected
+    if (formData.includePathPlanner) {
       try {
-        const file = await fetchFileFromGitHub(filePath);
-        files.push(file);
+        console.log('Fetching PathPlanner files from 6-PathPlanner branch...');
+        const pathPlannerFiles = await fetchRepositoryStructure('', '6-PathPlanner');
+        console.log(`Fetched ${pathPlannerFiles.length} PathPlanner files`);
+        
+        // Merge files, with PathPlanner branch taking precedence for conflicts
+        for (const file of pathPlannerFiles) {
+          const existingIndex = allFiles.findIndex(f => f.path === file.path);
+          if (existingIndex >= 0) {
+            // Replace existing file
+            allFiles[existingIndex] = file;
+            console.log(`Replaced ${file.path} with PathPlanner version`);
+          } else {
+            // Add new file
+            allFiles.push(file);
+            console.log(`Added new PathPlanner file: ${file.path}`);
+          }
+        }
       } catch (error) {
-        console.warn(`Could not fetch ${filePath}:`, error.message);
+        console.warn('Failed to fetch PathPlanner files, continuing without them:', error.message);
+        setStatus({ type: 'loading', message: 'PathPlanner files unavailable, continuing with base project...' });
       }
     }
     
-    return files;
+    // Add Vision files if selected
+    if (formData.includeVision) {
+      try {
+        console.log('Fetching Vision files from 7-Vision branch...');
+        const visionFiles = await fetchRepositoryStructure('', '7-Vision');
+        console.log(`Fetched ${visionFiles.length} Vision files`);
+        
+        // Merge files, with Vision branch taking precedence for conflicts
+        for (const file of visionFiles) {
+          const existingIndex = allFiles.findIndex(f => f.path === file.path);
+          if (existingIndex >= 0) {
+            // Replace existing file
+            allFiles[existingIndex] = file;
+            console.log(`Replaced ${file.path} with Vision version`);
+          } else {
+            // Add new file
+            allFiles.push(file);
+            console.log(`Added new Vision file: ${file.path}`);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch Vision files, continuing without them:', error.message);
+        setStatus({ type: 'loading', message: 'Vision files unavailable, continuing with base project...' });
+      }
+    }
+    
+    console.log(`Final merged files count: ${allFiles.length}`);
+    return allFiles;
   };
 
   const processJavaFile = (content, teamNumber, teamName, projectName) => {
@@ -230,43 +240,78 @@ const ProjectGenerator = () => {
       return JSON.stringify(preferences, null, 2);
     } catch (error) {
       console.warn('Could not parse WPILib preferences, creating new one:', error);
-      return createWPILibPreferences(teamNumber);
+      return JSON.stringify({
+        "enableCppIntellisense": false,
+        "currentLanguage": "java",
+        "projectYear": "2025",
+        "teamNumber": parseInt(teamNumber)
+      }, null, 2);
     }
   };
 
-  const createWPILibPreferences = (teamNumber) => {
-    return JSON.stringify({
-      "enableCppIntellisense": false,
-      "currentLanguage": "java",
-      "projectYear": "2025",
-      "teamNumber": parseInt(teamNumber)
-    }, null, 2);
+  const processTunerConstants = (content, formData) => {
+    let processedContent = content;
+    
+    // Update drivetrain constants
+    if (formData.wheelDiameter) {
+      processedContent = processedContent.replace(
+        /kWheelRadiusInches\s*=\s*[\d.]+/g,
+        `kWheelRadiusInches = ${parseFloat(formData.wheelDiameter) / 2}`
+      );
+    }
+    
+    if (formData.driveGearRatio) {
+      processedContent = processedContent.replace(
+        /kDriveGearRatio\s*=\s*[\d.]+/g,
+        `kDriveGearRatio = ${formData.driveGearRatio}`
+      );
+    }
+    
+    if (formData.steerGearRatio) {
+      processedContent = processedContent.replace(
+        /kSteerGearRatio\s*=\s*[\d.]+/g,
+        `kSteerGearRatio = ${formData.steerGearRatio}`
+      );
+    }
+    
+    // CANivore configuration
+    if (formData.useCANivore && formData.canivoreSerial) {
+      processedContent = processedContent.replace(
+        /kCANivoreSerial\s*=\s*"[^"]*"/g,
+        `kCANivoreSerial = "${formData.canivoreSerial}"`
+      );
+    }
+    
+    return processedContent;
   };
 
   const generateProject = async () => {
-    if (!validateForm()) return;
-    
     setIsGenerating(true);
-    setStatus({ type: 'loading', message: 'Fetching latest code from GitHub...' });
-      try {
-      // Fetch all files from the repository
-      setStatus({ type: 'loading', message: 'Fetching complete project from GitHub...' });
-      console.log('Fetching complete repository structure...');
+    setStatus({ type: 'loading', message: 'Fetching project files from GitHub...' });
+    
+    try {
+      // Fetch all files from the repository and selected branches
+      console.log('Fetching files from repository and selected branches...');
       
       let allFiles;
       try {
-        allFiles = await fetchRepositoryStructure();
+        allFiles = await mergeRepositoryFiles();
         console.log(`Successfully fetched ${allFiles.length} files from repository`);
         console.log('Files fetched:', allFiles.map(f => f.path));
       } catch (error) {
-        console.warn('Failed to fetch complete repository, trying individual files:', error.message);
-        setStatus({ type: 'loading', message: 'Fetching individual files from GitHub...' });
-        allFiles = await fetchKnownFiles();
-        console.log(`Fallback method fetched ${allFiles.length} files`);
-        console.log('Fallback files:', allFiles.map(f => f.path));
+        console.warn('Failed to fetch complete repository, trying fallback approach:', error.message);
+        setStatus({ type: 'loading', message: 'Trying fallback approach to fetch files...' });
+        
+        // Fallback: just fetch main branch files
+        try {
+          allFiles = await fetchRepositoryStructure('', 'main');
+          console.log(`Fallback: Successfully fetched ${allFiles.length} files from main branch`);
+          setStatus({ type: 'loading', message: 'Using base project files (advanced features may be unavailable)...' });
+        } catch (fallbackError) {
+          console.error('Fallback also failed:', fallbackError);
+          throw new Error(`Failed to fetch project files: ${fallbackError.message}`);
+        }
       }
-      
-      console.log('Fetched files:', allFiles);
       
       setStatus({ type: 'loading', message: 'Processing project files and applying customizations...' });
       
@@ -289,6 +334,11 @@ const ProjectGenerator = () => {
         // Process specific file types
         if (fileName.endsWith('.java')) {
           content = processJavaFile(content, formData.teamNumber, formData.teamName, formData.projectName);
+          
+          // Special handling for TunerConstants
+          if (fileName.includes('TunerConstants.java')) {
+            content = processTunerConstants(content, formData);
+          }
         } else if (fileName.includes('build.gradle')) {
           content = processGradleFile(content, formData.teamNumber);
         } else if (fileName.includes('wpilib_preferences.json')) {
@@ -327,6 +377,8 @@ This project contains a Phoenix 6 swerve drivetrain implementation based on the 
 - SysId characterization support
 - Complete vendor dependencies
 - WPILib preferences configured
+${formData.includePathPlanner ? '- PathPlanner integration for autonomous' : ''}
+${formData.includeVision ? '- PhotonVision integration for AprilTag detection' : ''}
 
 ## Building and Deploying
 
@@ -341,15 +393,23 @@ This project contains a Phoenix 6 swerve drivetrain implementation based on the 
 - Team number is set to ${formData.teamNumber} in build.gradle and WPILib preferences
 - Configure hardware IDs in TunerConstants.java for your robot
 - Adjust swerve module constants as needed
+- Wheel diameter: ${formData.wheelDiameter}" inches
+- Drive gear ratio: ${formData.driveGearRatio}:1
+- Steer gear ratio: ${formData.steerGearRatio}:1
+${formData.useCANivore ? `- CANivore configured with serial: ${formData.canivoreSerial}` : ''}
 
 ## Support
 
 For help with this code:
 - Check the [WPILib documentation](https://docs.wpilib.org/)
 - Visit the [Phoenix 6 documentation](https://v6.docs.ctr-electronics.com/)
+${formData.includePathPlanner ? '- View [PathPlanner documentation](https://pathplanner.dev/)' : ''}
+${formData.includeVision ? '- Check [PhotonVision documentation](https://docs.photonvision.org/)' : ''}
 - Ask on the [FRC Discord](https://discord.gg/frc)
 
 Generated from: https://github.com/Hemlock5712/2025-Workshop
+${formData.includePathPlanner ? 'PathPlanner: https://github.com/Hemlock5712/2025-Workshop/tree/6-PathPlanner' : ''}
+${formData.includeVision ? 'Vision: https://github.com/Hemlock5712/2025-Workshop/tree/7-Vision' : ''}
 `;
 
       projectFolder.file('README.md', readme);
@@ -358,7 +418,7 @@ Generated from: https://github.com/Hemlock5712/2025-Workshop
       setGeneratedZip(zip);
       
     } catch (error) {
-      console.error('Error generating project:', error);
+      console.error('Generation failed:', error);
       setStatus({ 
         type: 'error', 
         message: `Failed to generate project: ${error.message}` 
@@ -368,111 +428,66 @@ Generated from: https://github.com/Hemlock5712/2025-Workshop
     }
   };
 
-  const downloadZip = async () => {
-    if (!generatedZip) return;
-    
-    try {
-      const content = await generatedZip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${formData.projectName}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error downloading ZIP:', error);
-      setStatus({ type: 'error', message: 'Failed to download ZIP file' });
+  const renderCurrentStep = () => {
+    switch (currentStep) {
+      case 1:
+        return (
+          <ProjectInfoStep
+            formData={formData}
+            onFormDataChange={handleFormDataChange}
+            onNext={handleNext}
+          />
+        );
+      case 2:
+        return (
+          <DrivetrainStep
+            formData={formData}
+            onFormDataChange={handleFormDataChange}
+            onNext={handleNext}
+            onPrevious={handlePrevious}
+          />
+        );
+      case 3:
+        return (
+          <FeaturesStep
+            formData={formData}
+            onFormDataChange={handleFormDataChange}
+            onNext={handleNext}
+            onPrevious={handlePrevious}
+          />
+        );
+      case 4:
+        return (
+          <ReviewStep
+            formData={formData}
+            onPrevious={handlePrevious}
+            onGenerate={generateProject}
+            isGenerating={isGenerating}
+            status={status}
+            generatedZip={generatedZip}
+          />
+        );
+      default:
+        return null;
     }
   };
 
   return (
     <div className="project-generator">
-      <h2>🔧 Generate Your Robot Code</h2>
-      <p>Enter your team information to generate a customized FRC robot project</p>
+      <div className="generator-header">
+        <h1>🚀 FRC Code Generator</h1>
+        <p>Generate a complete FRC robot project with Phoenix 6 swerve drivetrain</p>
+      </div>
       
-      <form onSubmit={(e) => { e.preventDefault(); generateProject(); }}>
-        <div className="form-group">
-          <label htmlFor="teamNumber">Team Number *</label>
-          <input
-            type="text"
-            id="teamNumber"
-            name="teamNumber"
-            value={formData.teamNumber}
-            onChange={handleInputChange}
-            placeholder="e.g. 1234"
-            maxLength="5"
-            pattern="[0-9]{1,5}"
-            required
-          />
-          <small>Your FRC team number (1-5 digits)</small>
-        </div>
-        
-        <div className="form-group">
-          <label htmlFor="teamName">Team Name *</label>
-          <input
-            type="text"
-            id="teamName"
-            name="teamName"
-            value={formData.teamName}
-            onChange={handleInputChange}
-            placeholder="e.g. The Robonauts"
-            maxLength="50"
-            required
-          />
-          <small>Your team's name for documentation</small>
-        </div>
-        
-        <div className="form-group">
-          <label htmlFor="projectName">Project Name *</label>
-          <input
-            type="text"
-            id="projectName"
-            name="projectName"
-            value={formData.projectName}
-            onChange={handleInputChange}
-            placeholder="e.g. 2025-Robot"
-            maxLength="50"
-            pattern="[a-zA-Z0-9_-]+"
-            required
-          />
-          <small>Project folder name (letters, numbers, hyphens, and underscores only)</small>
-        </div>
-        
-        <button 
-          type="submit" 
-          className="generate-btn"
-          disabled={isGenerating}
-        >
-          {isGenerating ? '⏳ Generating...' : '🚀 Generate Project'}
-        </button>
-      </form>
+      <StepIndicator 
+        currentStep={currentStep}
+        totalSteps={totalSteps}
+        stepNames={stepNames}
+      />
       
-      {status.message && (
-        <div className={`status-message ${status.type}`}>
-          {status.message}
-        </div>
-      )}
-      
-      {generatedZip && (
-        <div className="download-section">
-          <h3>✅ Project Ready!</h3>
-          <p>Your customized FRC robot project has been generated and is ready for download.</p>
-          <button onClick={downloadZip} className="download-btn">
-            📦 Download {formData.projectName}.zip
-          </button>
-          <div style={{ marginTop: '1rem', fontSize: '0.9rem', color: '#666' }}>
-            <p><strong>Next steps:</strong></p>
-            <ol style={{ textAlign: 'left', maxWidth: '600px', margin: '0 auto' }}>
-              <li>Extract the ZIP file to your desired location</li>
-              <li>Open the project in VS Code with the WPILib extension</li>
-              <li>Configure hardware IDs in TunerConstants.java for your robot</li>
-              <li>Build and deploy to your robot using WPILib commands</li>
-            </ol>
-          </div>
-        </div>
-      )}
+      <div className="generator-content">
+        {renderCurrentStep()}
+      </div>
     </div>
   );
 };
