@@ -2,6 +2,8 @@
 
 A modern React web application for FRC (FIRST Robotics Competition) code generation, built with Vite and deployed on GitHub Pages.
 
+**🌐 Live Demo**: [https://aydenlo17.github.io/frc-codegen/](https://aydenlo17.github.io/frc-codegen/)
+
 ## 🚀 Features
 
 - **Modern React**: Built with React 18 and Vite for fast development
